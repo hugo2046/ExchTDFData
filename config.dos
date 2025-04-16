@@ -1,0 +1,15 @@
+module ExchTDFData::config
+
+
+// 设置配置
+def setConfig(){
+	cfg = dict(string,string);
+    cfg['dbName'] = "dfs://TickBase";
+    cfg['tick'] = 'stockTick';
+    cfg['order'] = 'stockOrder';
+    cfg['orderqueue'] = 'stockOrderQueue';
+    cfg['transaction'] = 'stockTransaction';
+    cfg['filePath'] = "/store/tdf/data/";
+    return cfg;
+};
+

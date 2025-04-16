@@ -1,0 +1,13 @@
+module ExchTDFData::ExchData::Tick
+use ExchTDFData::schema::tickSchema
+use ExchTDFData::prepare::prepare
+use ExchTDFData::utils 
+
+
+def loadOneCsvTick(filePath,dbName,tbName,checkData=true){
+ 
+    loadOneCsv(filePath,dbName,tbName,TickCsvSchema,checkData);
+    
+};
+
+// loadOneCsvTick("/store/tdf/data/20250331/SH-2-0/Tick2/510300.csv","dfs://TickBase","stockTick",checkData=false)

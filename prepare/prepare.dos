@@ -1,0 +1,306 @@
+module ExchTDFData::prepare::prepare
+use ExchTDFData::schema::orderSchema
+use ExchTDFData::schema::tickSchema
+use ExchTDFData::schema::orderQueueSchema
+use ExchTDFData::schema::transactionSchema 
+use ExchTDFData::utils
+
+
+def checkTbSchema(dataType,dbName,tbName){
+    schemaTB1,schemaTB2=NULL,NULL
+	if (dataType.lower() == "tick"){
+        schemaTB1 = TickSchema().schema().colDefs;
+        schemaTB2 = loadTable(dbName,tbName).schema().colDefs;
+    };
+    else if (dataType.lower()  == "order"){
+        schemaTB1 = OrderSchema().schema().colDefs;
+        schemaTB2 = loadTable(dbName,tbName).schema().colDefs; 
+    };
+    else if (dataType.lower()  == "orderqueue"){
+        schemaTB1 = OrderQueueSchema().schema().colDefs;
+        schemaTB2 = loadTable(dbName,tbName).schema().colDefs;
+    };
+    else if (dataType.lower()  == "transaction"){
+        schemaTB1 = TransactionSchema().schema().colDefs;
+        schemaTB2 = loadTable(dbName,tbName).schema().colDefs;
+    };
+    if (eqObj(schemaTB1.values()[0:2], schemaTB2.values()[0:2])==false){
+        errorMessage = dict(`message`code, ["分布式表 [" + dbName + ", " + tbName + "] 的表结构和 Schema 里指定表结构不一致，考虑设置 initialTB=true", "error"])
+        throw errorMessage["message"]
+    };
+    return true
+};
+
+/*
+* 如果删除日期有数据则直接删除
+*/
+def deleteDuplicateData(dbName,tbName, deletDates){//deletDates=tradingDates
+   
+    target_date = (select count(*) from loadTable(dbName,tbName) where date in deletDates group by date).date
+    if(size(target_date) > 0){
+        writeLog("Delete duplicate data["+concat(target_date,",")+"] in the database.")
+        print("Delete duplicate data["+concat(target_date,",")+"] in the database.")
+        // 删除直接删除分区
+        dropPartition(database(dbName), target_date, tableName=tbName)        
+    }
+   
+}
+
+
+
+def deleteFile(csvPath){ 
+    for (path in csvPath)   {
+        output=shell("rm -rf "+path)
+        if (output==0){
+            successMessage = dict(`message`code, ["删除 文件："+path+" 成功", "success"])
+            print(toStdJson(successMessage))         
+            writeLog(toStdJson(successMessage))   
+        }
+        else{
+            errorMessage = dict(`message`code, ["删除 文件："+path+" 失败", "ERROR"])
+            print(toStdJson(errorMessage))    
+            writeLog(toStdJson(errorMessage))   
+        }
+    }
+}
+
+
+/**
+ * 将CSV数据转换为数据库格式，处理列映射和数据类型转换
+ * 
+ * 此函数执行以下操作:
+ * 1. 创建CSV列名到数据库列名的映射
+ * 2. 根据映射选择和重命名CSV数据中的列
+ * 3. 转换时间列从整数格式到TIME类型
+ * 
+ * @param t1 原始CSV表数据
+ * @param t2 目标数据库表或表结构
+ * @param csvSchemaFunc 获取CSV表结构的函数，默认为TickCsvSchema
+ * @param dbSchemaFunc 获取数据库表结构的函数，默认为TickDbSchema
+ * @return 转换后的表，列名和数据类型与数据库表匹配
+ */
+ def convertCsvToDbFormat(t1, t2, csvSchemaFunc, dbSchemaFunc) {
+    // 创建列名映射关系
+    dfsName = dbSchemaFunc().schema().colDefs.name
+    csvName = csvSchemaFunc().schema().colDefs.name
+    csvTodfs = table(dfsName, csvName)
+    
+    // 只保留两个表中都存在的列
+    csvTodfs = select * from csvTodfs where dfsName in t2.columnNames(), csvName in t1.columnNames()
+    
+    // 选择并重命名CSV列
+    t1new = sql(select = sqlCol(csvTodfs["csvName"]), from=t1).eval()
+    
+    // 转换时间类型列
+    tcols = exec name from t2.schema().colDefs where typeString = "TIME" and name in csvTodfs["dfsName"]
+    tcols = exec csvName from csvTodfs where dfsName in tcols
+    
+    // 对每个时间列进行转换
+    for (col in tcols) {
+        t1new.replaceColumn!(col, formatIntTimeString(t1new[col]))
+    }
+    
+    t2new = sql(select = sqlCol(csvTodfs["dfsName"]),from=t2).eval();
+
+    return t1new,t2new,csvTodfs
+}
+
+/* 检查待入库的数据是否与原始数据一致
+ * @param tbName 表名
+ * @param market 市场
+ * @param t1 csv原始数据
+ * @param t2 待入库的数据
+ * @return true 一致 false 不一致
+ */
+
+ def checkCsvFile(tbName,t1,t2){
+    if (tbName.lower()=="tick"){
+        t1new,t2new,csvTodfs = convertCsvToDbFormat(t1, t2, TickCsvSchema, TickDbSchema);
+    };
+    else if(tbName.lower()=="order"){
+       t1new = convertCsvToDbFormat(t1, t2, OrderCsvSchema, OrderDbSchema);
+    }
+    else if(tbName.lower()=="orderqueue"){
+        t1new = convertCsvToDbFormat(t1, t2, OrderQueueCsvSchema, OrderQueueDbSchema);
+    }
+    else if(tbName.lower()=="transaction"){
+        t1new = convertCsvToDbFormat(t1, t2, TransactionCsvSchema, TransactionDbSchema);
+    }
+    
+    res =  eqObj(t1new.values(),t2new.values());
+    if (res==false){
+        csvNames = csvTodfs["csvName"];
+        dfsNames = csvTodfs["dfsName"];
+        for (i in 0:size(csvNames)){
+            if (eqObj(t1new[csvNames[i]],t2new[dfsNames[i]])==false){
+                errorMessage = dict(`message`code, ["csv 文件"+csvNames[i]+"与分布式表待入库数据"+dfsNames[i]+"不一致，请检查！", "error"]);
+                print errorMessage["message"];
+            }
+        }
+    }
+    return res
+};
+
+
+/**
+ * 将原始CSV格式的行情数据转换为符合数据库格式要求的表格
+ * 
+ * 函数处理以下转换:
+ * 1. 将TIME类型的列从整数格式转换为时间字符串格式
+ * 2. 重命名某些列名(accturnover→turnover, accturover→turover)
+ * 3. 根据TickSchema()提供的类型定义，将所有非TIME类型的列转换为正确的数据类型
+ * 4. 重新排列列顺序以匹配目标表结构
+ * 
+ * @param t {table} - 需要转换的源表，为可变表(mutable)
+ * @param pt {table} - 目标表，用于提供正确的列顺序
+ * @return {void} - 直接修改输入表t，无返回值
+ * @throws - 如果类型转换失败会捕获异常并打印警告，但不会中断程序
+ */
+ def transformCsvToDbFormat(mutable tb, pt,csvSchema,mappingFields=NULL){
+
+    tcols = exec name from csvSchema() where name="time";
+
+    for (col in tcols){
+        formatTableTimeStringColumn(tb,col);
+    };
+	
+    // 转换数据类型 - 使用向量化操作
+    // 获取非TIME类型的列和类型
+    nonTimeCols = exec * from csvSchema() where name != "time";
+    colTypes = dict(nonTimeCols['name'],nonTimeCols['type']);
+
+    for (col in colTypes.keys()){
+        targetType = colTypes[col];
+        try{
+            tb.replaceColumn!(col,tb[col]$colTypes[col]);
+        } catch(ex) {
+            print("警告: 转换列 " + col + " 到类型 " + targetType + " 失败: " + ex);
+        };
+        
+    };
+
+    if (count(mappingFields)>0){
+        tb.rename!(mappingFields.keys(),mappingFields.values());
+    };
+    // NOTE:将csv列按数据库字段顺序排列
+    reorderColumns!(tb,pt.columnNames());
+
+};
+
+/*
+* @description: 检查csv文件的日期是否为目标日期
+* @param csvPath: csv文件路径
+* @param dbTB: 数据库表格
+* @param tbName: 数据库表名
+* @param csvSchema: csv表结构
+* @param checkData: 是否检查数据
+*/
+def loadOneCsv(csvPath,dbName,tbName,csvSchema,checkData=true){
+
+    infoDict = getTDFPathInfo(csvPath);
+    marketNameDict = dict(["SH-2-0","SZ-2-0"],`上交所`深交所);
+    marketNameCN = marketNameDict[infoDict['market']];
+    marketType = infoDict['type'];
+    day = infoDict['day'];
+    code = infoDict['code'];
+
+	if(!exists(csvPath)){
+		errorMessage = dict(`message`code, [stringFormat("%W数据 [%W] 日[%W]的csv 文件不全或者不存在!",marketNameCN,marketType,csvPath), "error"]);
+		writeLog(toStdJson(errorMessage));
+		print(toStdJson(errorMessage));
+        throw errorMessage["message"];
+	}
+    
+    // csv结构TickCsvSchema
+    // db结构TickDbSchema
+	schemaTB = csvSchema();
+
+    // 获取csv结构
+	schemaTest = extractTextSchema(csvPath);
+
+	if (schemaTest.size()<=2){
+		schemaTest = extractTextSchema(csvPath,skipRows=1);	
+	};
+    
+    // 检查csv文件的列数是否和数据库表的列数一致
+	if(schemaTB.rows() != schemaTest.rows()){
+		errorMessage = dict(`message`code, ["[" + csvPath + "] 的数据格式有误，列数不匹配", "error"]);
+		writeLog(toStdJson(errorMessage));
+		print(toStdJson(errorMessage));
+        throw errorMessage["message"];
+	};
+
+
+	// 判断数据是否为0
+	cnt =  exec count(*) from ploadText(filename=csvPath,schema=schemaTB,skipRows=1);
+	if (cnt < 1){
+        errorMessage = dict(`message`code, ["[" + csvPath + "] 的数据为空，数据行数为0", "error"]);
+        writeLog(toStdJson(errorMessage));
+        print(toStdJson(errorMessage));
+        throw errorMessage["message"];
+    };
+    // csvTB t1  
+    csvTB = select * from ploadText(filename=csvPath,schema=schemaTB,skipRows=1)
+    // 将gbk转为utf8
+    csvTB['name'] = toUTF8(csvTB['name'],"gbk");
+    // 备份用于转为db数据类型 t2
+    dbTB = csvTB;
+    // 获取数据库的表结构
+    pt = loadTable(dbName, tbName);
+
+    // 将备份的csvTB转为数据库表格式
+    // NOTE: 这里的转换函数需要根据实际情况进行修改
+    if (marketType.lower()=="tick"){
+        transformCsvToDbFormat(dbTB,pt,csvSchema,dict(`accturnover`turnover,`accturover`turover));
+    };
+    else{
+        transformCsvToDbFormat(dbTB,pt,csvSchema);
+    }
+    
+    // 检查csv文件的日期是否为目标日期
+    if (checkCSVDate(temporalParse(day,"yyyMMdd"),dbTB)){
+        errorMessage = dict(`message`code, [stringFormat("%W 文件中的日期与%W日期不一致,请检查",csvPath,day),"error"]);
+        writeLog(toStdJson(errorMessage));
+        print(toStdJson(errorMessage));
+        throw errorMessage["message"];
+    };
+   
+    if (checkCsvFile("tick",csvTB,dbTB)){
+        
+        // 检查需要插入的数据与pt表的列数是否一致
+        if(schemaTB.rows() != pt.schema().colDefs.rows()){
+            errorMessage = dict(`message`code, [stringFormat("[%W] 日期 %W[%W]列数(%W)与分布式表待入库数据列数(%W)不匹配",day,marketType,code,string(schemaTB.rows()),string(pt.schema().colDefs.rows())), "error"]);
+            writeLog(toStdJson(errorMessage));
+            print(toStdJson(errorMessage));
+            throw errorMessage["message"];
+        };
+
+        successMessage = dict(`message`code, [stringFormat("%W 数据 [%W] 日期 %W[%W] 数据 校验通过,csvTB size:, %W,dbTB size: %W开始导入数据！",marketNameCN,day,marketType,code,string(csvTB.size()),string(dbTB.size())),"success"]);
+        writeLog(toStdJson(successMessage));
+        print(toStdJson(successMessage));
+        csvTB = NULL;
+
+        // 高频数据为TSDB所以直接插入
+        n = pt.tableInsert(dbTB);
+        if (n == dbTB.size()){
+            successMessage = dict(`message`code, [stringFormat("成功插入 %W 数据 [%W] 日期 %W[%W] 数据 %W条",marketNameCN,day,marketType,code,string(n)), "success"]);
+            writeLog(toStdJson(successMessage));
+            print(toStdJson(successMessage));
+        }
+        else{
+            errorMessage = dict(`message`code, [stringFormat("%W [%W] 日期 %W[%W] 的csv数据为%W条,写入dfs数据%W条,请检查LOG!",marketNameCN,day,marketType,code,string(dbTB.size()),string(n)), "warning"])
+            writeLog(toStdJson(errorMessage))
+            throw errorMessage["message"]
+        }
+    }	
+    else{
+        
+        errorMessage = dict(`message`code, [stringFormat("%W [%W]日期 %W[%W] 的 csv 数据和写入dfs数据不一致，csvTB size:%W ,dbTB size: %W请检查！",marketNameCN,day,marketType,code,string(csvTB.size()),string(dbTB.size())), "error"])
+        writeLog(toStdJson(errorMessage))
+          throw errorMessage["message"]
+    }
+    dbTB = NULL;
+	return true
+};
+
+

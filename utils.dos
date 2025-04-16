@@ -1,0 +1,152 @@
+module ExchTDFData::utils
+
+/**
+ * 将整数格式的时间(HHMMSSMMM)转换为DolphinDB的TIME类型（使用字符串格式化方法）
+ * 
+ * 此函数将整数时间(如84503000表示08:45:03.000)转换为标准的TIME类型。
+ * 它通过先将整数转换为格式化字符串(HH:mm:ss.SSS)，然后再使用temporalParse解析。
+ * 此方法对于时间格式理解更直观，但性能可能低于数学计算方法。
+ * 
+ * @param timeInt 整数格式的时间，如84503000表示08:45:03.000
+ * @return TIME类型的时间值
+ * @example formatIntTimeString(84503000) 返回 08:45:03.000
+ */
+ def formatIntTimeString(timeInt){
+    // 将整数转为字符串
+    timeStr = string(timeInt);
+    
+    // 如果长度小于9，前面补0
+    timeStr = iif(size(timeStr)<9,lpad(string(timeStr),9,"0"),timeStr);
+    
+    // 插入分隔符
+    formattedStr = substr(timeStr, 0, 2) + ":" + 
+                   substr(timeStr, 2, 2) + ":" + 
+                   substr(timeStr, 4, 2) + "." + 
+                   substr(timeStr, 6, 3)
+    
+    // 解析为TIME类型
+    return temporalParse(formattedStr, "HH:mm:ss.SSS")
+};
+
+/**
+ * 批量将表中的整数时间列转换为TIME类型（使用字符串格式化方法）
+ * 
+ * @param tb 输入表
+ * @param timeColumn 包含整数时间的列名，默认为'time'
+ * @param newColumn 新TIME类型列的名称，如果为NULL则直接替换原列
+ * @return 添加或替换了TIME类型列的表
+ */
+ def formatTableTimeStringColumn(mutable tb, timeColumn='time', newColumn=NULL) {
+    if (newColumn == NULL) {
+        // 直接替换原列
+        colValues = each(formatIntTimeString, tb[timeColumn]);
+        replaceColumn!(tb, timeColumn, colValues);
+    } else {
+        // 添加新列
+        tb[newColumn] = each(formatIntTimeString, tb[timeColumn]);
+    };
+    return tb;
+};
+
+/*
+* 检查表中的日期是否仅有目标日期
+* @param day 日期
+* @param tb 表
+*/
+def checkCSVDate(day,tb){
+    checkTB = exec distinct date from tb;
+    return (count(checkTB)==1) and (day in checkTB);
+}
+
+/*
+* @获取csv文件的路径信息
+* @param csvPath csv文件路径
+*/
+def getTDFPathInfo(csvPath){
+    parts = split(csvPath, "/");
+    n = size(parts);
+    // 获取文件名
+    csvName = parts[n-1];
+    // 类型 Tick2,Order,OrderQueue,Transaction
+    type = strReplace(parts[n-2],"2","");
+    // 市场 SH-2-0,SZ-2-0
+    market = parts[n-3].upper();
+    // 日期
+    day = parts[n-4];
+    // 获取文件名
+    code = strReplace(csvName,".csv","")+"."+strReplace(market,"-2-0","")
+
+    return dict(`csvName`type`market`day`code, [csvName,type,market,day,code]);
+};
+
+/*
+* @检查路径是否以/结尾
+* @param path 路径
+* @return path
+* 例如：checkPathSuffix("/data1/hugo/tdf20250304/data")
+* 输出：/data1/hugo/tdf20250304/data/
+*/
+def normalizePathWithSlash(mutable path){
+    if (not endsWith(path,"/")){
+        path = path + "/";
+    };
+    return path;
+};
+
+
+/*
+* @检查路径是否存在
+* @param path 路径
+*/
+def checkFileExist(filePath){
+  
+    if (!exists(filePath)){
+        errorMessage = dict(`message`code, [stringFormat("文件路径不存在: %W",filePath), "error"])
+		writeLog(toStdJson(errorMessage))
+		print(toStdJson(errorMessage))
+        // throw errorMessage["message"]
+        return false;
+    };
+
+    return true;
+};
+
+
+/*
+* @directory: 文件目录 /store/tdf/data/
+* @date: 日期 20250331
+* @market: 市场 SH/SZ
+* @dataType: 文件类型 Tick2或Order
+* @return: 返回文件列表
+*/
+def getCsvFilePath(mutable directory,date,market,dataType){
+ 
+    fileList = [];
+    basePath = normalizePathWithSlash(directory);
+    if (!checkFileExist(basePath)){
+        return fileList;
+    };
+
+    // 文件路径,比如：xxx/日期/SH-2-0/Tick2/
+    filePath = basePath + date + "/" + market + "-2-0/" + dataType + "/";
+  
+    if (!checkFileExist(filePath)){
+        return fileList;
+    }
+
+    fileTB = files(filePath);
+    
+    if (count(fileTB)>0){
+        fileNames = fileTB['filename'];
+        for (fileName in fileNames){
+            fileList.append!(filePath + fileName);
+        };
+    };
+
+    return fileList;
+
+};
+
+// 测试函数
+// filePath = "/store/tdf/data/20250301/SH-2-0/Tick2/"
+// getCsvFilePath("/store/tdf//data/",20250301,"SH","Tick2");

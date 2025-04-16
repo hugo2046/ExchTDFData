@@ -1,0 +1,11 @@
+module ExchTDFData::ExchData::Transaction
+use ExchTDFData::schema::transactionSchema
+use ExchTDFData::prepare::prepare
+use ExchTDFData::utils 
+
+
+def loadOneCsvTransaction(filePath,dbName,tbName,checkData=true){
+ 
+    loadOneCsv(filePath,dbName,tbName,TransactionCsvSchema,checkData);
+
+};

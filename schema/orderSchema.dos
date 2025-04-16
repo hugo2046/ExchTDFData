@@ -1,0 +1,101 @@
+module DolphinDBScript::ExchTDFData::schema::orderSchema
+
+def OrderDbSchema(){
+    name = ['code',
+            'wind_code',
+            'name',
+            'date',
+            'time',
+            'order',
+            'order_kind',
+            'function_code',
+            'order_price',
+            'order_volume',
+            'channel',
+            'order_orino',
+            'biz_index'];
+
+    type= ['SYMBOL',
+           'SYMBOL',
+           'SYMBOL',
+           'DATE',
+           'TIME',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG'];
+
+    schemaTable = table(name, type)
+    return schemaTable
+};
+
+def OrderCsvSchema(){
+    name = ['code',
+            'wind_code',
+            'name',
+            'date',
+            'time',
+            'order',
+            'order_kind',
+            'function_code',
+            'order_price',
+            'order_volume',
+            'channel',
+            'order_orino',
+            'biz_index'];
+
+    type= ['SYMBOL',
+           'SYMBOL',
+           'SYMBOL',
+           'DATE',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG'];
+
+    schemaTable = table(name, type)
+    return schemaTable
+};
+
+
+def OrderSchema(){
+    name = ['code',
+            'wind_code',
+            'name',
+            'date',
+            'time',
+            'order',
+            'order_kind',
+            'function_code',
+            'order_price',
+            'order_volume',
+            'channel',
+            'order_orino',
+            'biz_index'];
+
+    type= ['SYMBOL',
+           'SYMBOL',
+           'SYMBOL',
+           'DATE',
+           'TIME',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG',
+           'LONG'];
+
+    schemaTable = table(1:0,name, type)
+    return schemaTable
+};

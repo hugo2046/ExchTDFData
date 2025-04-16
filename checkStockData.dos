@@ -1,0 +1,220 @@
+module ExchTDFData::checkStockData
+use ExchTDFData::config
+
+
+/*
+* @ brief:检查channelNo数据是否缺失(深交所:2011-2014;上交所:6-10;)
+* @ paramters:
+	* day:日期
+	* exchange:交易所
+* @ return:
+	* true: 数据完整
+	* false: 数据缺失
+*/
+def checkOneDayChannel(channels, day, market){
+	if (day<2023.01.01) return true
+	if (market=="SH") return eqObj(channels[channels in 1..6], 1..6)
+	if (market=="SZ") return eqObj(channels[channels in 2011..2014], 2011..2014)
+}
+
+
+/* 
+* @ brief:检查channelNo下的ApplSeqNum是否不连续
+* @ paramters:
+	* day:日期
+	* exchange:交易所
+	* channel:通道号
+* @ return:
+	* true: 数据完整
+	* false: 数据缺失
+*/
+def checkOneDayChannelData(channel, day, exchange){
+	// 载入配置
+	cfg = setConfig();
+	dbName = cfg['dbName'];
+	tradeApplSeqs = exec biz_index from loadTable(dbName,cfg['transaction']) where date = day, channel=channel, right(wind_code,2)=exchange order by biz_index
+	orderApplSeqs = exec biz_index from loadTable(dbName,cfg['order']) where date = day, channel=channel, right(wind_code,2)=exchange order by biz_index
+	ApplSeqs = (tradeApplSeqs join orderApplSeqs).sort()
+	re = eqObj(int(ApplSeqs.deltas()[1:]), take(1, ApplSeqs.size()-1))
+	if (re) {
+		return true
+	}
+	else{
+		ApplSeqs_compare = ApplSeqs.min()..ApplSeqs.max()
+		diff = (set(ApplSeqs_compare)-set(ApplSeqs)).keys()
+		if (count(diff)!=0){
+			errorMessage = dict(`message`code, ["["+iif(exchange.upper()=="SZ","深交所","上交所") +"] 交易所 [" + string(day) + "] 日期 [" + channel + "] channelNo ["+concat(iif(diff.size()>20,take(diff,20),diff),",")+"] BizIndexNum数据缺失，共计"+string(diff.size())+"条， 请检查!", "error"])
+		} 
+		else{
+			n = sum(int(ApplSeqs.deltas()[1:])==0)
+			errorMessage = dict(`message`code, ["["+iif(exchange.upper()=="SZ","深交所","上交所") +"] 交易所 [" + string(day) + "] 日期 [" + channel + "] channelNo 存在"+string(n)+"条重复数据， 请检查!", "error"])
+		}
+		writeLog(toStdJson(errorMessage))
+		print(toStdJson(errorMessage))
+		return false
+	}	
+}
+
+
+/* 
+* @ brief:检查每天股票数据的trade和order数据是否满足特定规则
+* @ paramters:
+	* day:日期
+* @ return:
+	* true: 数据正常
+	* false: 数据异常
+*/
+def checkOneDayRule(day){
+	// 载入配置
+	cfg = setConfig();
+	cnt_trade = exec count(*) from loadTable(cfg['dbName'],cfg['transaction']) where date = day;
+	cnt_order = exec count(*) from loadTable(cfg['dbName'],cfg['order']) where date = day;
+	checkMessage = ""
+	if (cnt_trade <15000000) checkMessage +=stringFormat("%W 数据异常! ",cfg['transaction']);
+	if (cnt_order <15000000) checkMessage +=stringFormat("%W 数据异常! ",cfg['order']);
+	return checkMessage	
+}
+
+
+/* 
+* @ brief: 检查特定市场的 channelNo 数据
+* @ paramters:
+    * day: 日期
+    * market: 交易所代码 (SH/SZ)
+    * cfg: 配置字典
+* @ return:
+    * result: 包含 [信息表, 错误数, 错误标记] 的向量
+*/
+def checkMarketChannelData(day, market, cfg) {
+    info = table(1:0, `date`market`message`code, `DATE`STRING`STRING`STRING)
+    errNum = 0
+    flag = 0
+    
+    marketName = iif(market=="SH", "上交所", "深交所")
+    expectedCount = iif(market=="SH", 6, 4)
+    
+    channels = exec distinct(channel) as channelNo from loadTable(cfg['dbName'],cfg['transaction']) 
+              where date = day and right(wind_code,2) = market order by channelNo
+              
+    if (!checkOneDayChannel(channels, day, market)) {
+        errorMessage = dict(`message`code, [marketName + " [" + string(day) + "] 日期 [" + 
+                     " channelNo 数据缺失，共计 [" + string(channels.size()) + 
+                     "] 个， 预计" + string(expectedCount) + "个，请检查!", "error"])
+        writeLog(toStdJson(errorMessage))
+        print(toStdJson(errorMessage))
+        info.tableInsert((day, market, toStdJson(errorMessage), "error"))
+        flag = 1
+    }
+
+    for (channel in channels) {
+        if (!checkOneDayChannelData(channel, day, market)) 
+            errNum += 1
+    }
+    
+    return [info, errNum, flag]
+}
+
+/* 
+* @ brief:检查每天股票数据的channelNo数据是否缺失
+* @ paramters:
+    * inputday:日期
+    * market:交易所
+* @ return:
+    * info: 异常信息表
+*/
+def checkOneDayData(inputday, market="ALL") {
+    cfg = setConfig()
+    info = table(1:0, `date`market`message`code, `DATE`STRING`STRING`STRING)
+
+    if (inputday == NULL) {
+        day = getMarketCalendar("SZSE", today()-7, today()-1).last() 
+    }
+    else {
+        day = inputday
+    }
+
+    flag = 0
+    errNum = 0
+    
+    // 检查数据规则
+    if (market == "ALL") {
+        checkMessage = checkOneDayRule(day)
+        if (checkMessage != NULL) {
+            errorMessage = dict(`message`code, [" ["+string(day) + "] "+ checkMessage, "error"])
+            writeLog(toStdJson(errorMessage))
+            print(toStdJson(errorMessage))
+            info.tableInsert((day, market, toStdJson(errorMessage), "error"))
+            flag = 1
+        }
+    }
+    
+    // 检查上交所数据
+    if (market == "ALL" || market.upper() == "SH") {
+        shResult = checkMarketChannelData(day, "SH", cfg)
+        info.append!(shResult[0])
+        errNum += shResult[1]
+        flag |= shResult[2]
+    }
+    
+    // 检查深交所数据
+    if (market == "ALL" || market.upper() == "SZ") {
+        szResult = checkMarketChannelData(day, "SZ", cfg)
+        info.append!(szResult[0])
+        errNum += szResult[1]
+        flag |= szResult[2]
+    }
+
+    // 汇总结果
+    if (errNum > 0) {
+        errMsg = " [" + string(day) + "] 日期共计 [" + string(errNum) + "] channelNo 数据异常， 请检查!"        
+        errorMessage = dict(`message`code, [errMsg, "error"])
+        writeLog(toStdJson(errorMessage))
+        print(toStdJson(errorMessage))
+        info.tableInsert((day, market, toStdJson(errorMessage), "error"))
+    }
+    else if (errNum == 0 && flag == 0) {
+        successMessage = dict(`message`code, [" [" + string(day) + "] 日期数据校验通过!", "success"])
+        writeLog(toStdJson(errorMessage))
+        print(toStdJson(errorMessage))
+    }
+    
+    return info
+}
+
+/* 
+* @ brief:批量检查股票数据的channelNo数据是否缺失
+* @ paramters:
+	* startDate:开始日期
+	* endDate:结束日期
+	* market:交易所
+* @ return:
+	* info: 异常信息表
+*/
+def checkAllData(startDate, endDate, market="ALL"){
+	dates = getMarketCalendar("SZSE",startDate,endDate).distinct().sort()
+	info = table(1:0, `date`market`message`code, `DATE`STRING`STRING`STRING)
+	for (day in dates){
+		info.append!(checkOneDayData(day, market))
+	}
+	return info
+}
+
+/* 
+* @ brief:批量检查股票数据的channelNo数据是否缺失
+* @ paramters:
+	* dates:需要校验的日期列表
+* @ return:
+	* info: 异常信息表
+*/
+def checkAllDataV2(dates, market="ALL"){
+	info = table(1:0, `date`market`message`code, `DATE`STRING`STRING`STRING)
+	for (day in dates){
+		info.append!(checkOneDayData(day, market))
+	}
+	return info
+}
+
+
+// clearCachedModules();
+// go;
+// checkOneDayData(2025.03.04)

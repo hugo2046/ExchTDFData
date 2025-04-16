@@ -1,0 +1,11 @@
+module ExchTDFData::ExchData::Order
+use ExchTDFData::schema::orderSchema
+use ExchTDFData::prepare::prepare
+use ExchTDFData::utils 
+
+
+def loadOneCsvOrder(filePath,dbName,tbName,checkData=true){
+ 
+    loadOneCsv(filePath,dbName,tbName,OrderCsvSchema,checkData);
+
+};

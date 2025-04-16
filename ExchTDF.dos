@@ -1,0 +1,117 @@
+module ExchTDFData::ExchTDF
+use ExchTDFData::ExchData::Transaction
+use ExchTDFData::ExchData::Order 
+use ExchTDFData::ExchData::Tick
+use ExchTDFData::ExchData::OrderQueue
+use ExchTDFData::ExchData::Transaction
+use ExchTDFData::prepare::prepare
+use ExchTDFData::schema::createTB
+use ExchTDFData::schema::orderSchema
+use ExchTDFData::schema::tickSchema
+use ExchTDFData::schema::orderSchema
+use ExchTDFData::schema::orderQueueSchema
+use ExchTDFData::utils
+
+
+def ExchTDFData(dbName,mutable tbNames,mutable filePath,startDate,endDate,mutable dataTypes,market="ALL",deleteDuplicate=true,initialTB=false,initialDB=false){		
+	// 若开启逐笔合并
+	if (eqObj(dataTypes.lower(),"tick"))          loadFunc = loadOneCsvTick;
+	else if (eqObj(dataTypes.lower(),"order"))       loadFunc = loadOneCsvOrder;
+	else if (eqObj(dataTypes.lower(),"orderqueue"))          loadFunc = loadOneCsvOrderQueue;
+	else if (eqObj(dataTypes.lower(),"transaction"))       loadFunc = loadOneCsvTransaction;
+  
+
+	// 针对起始日期生成交易日数据,若未指定startDate和endDate则默认导入最近交易日数据
+	if(startDate == NULL || endDate == NULL)
+	{		
+		//getMarketCalendar("SZSE",today()-1,today()-1) 
+		tradingDates = transFreq(today(),"SZSE");
+	}
+	else{
+		tradingDates = getMarketCalendar("SZSE",startDate,endDate);
+	}
+
+	for (i in 0:dataTypes.size()){
+		if (dataTypes.size()==1){
+			tbName = tbNames;
+			dataType = dataTypes;
+		}
+		else{
+			tbName = tbNames[i];
+			dataType = dataTypes[i]	;	
+		}
+		// 尝试创建库表	
+		try{
+			createTB(dbName, tbName, dataType, initialDB, initialTB);
+		}catch(ex){
+			errorMessage = dict(`message`code, [string(ex[0])+":"+string(ex[1]), "error"]);
+			writeLog(toStdJson(errorMessage));
+			throw toStdJson(errorMessage);
+		}
+	
+		
+		// 检查库表结构
+		if (!checkTbSchema(dataType, dbName, tbName)){
+			return false;
+		}
+
+
+		if (tradingDates.size() == 0){
+			print("Skip loading data, no trading dates found.")
+			writeLog("Skip loading data, no trading dates found.")
+			return false
+		}
+
+		// 导入前删除重复数据
+		if (deleteDuplicate){
+			deleteDuplicateData(dbName, tbName, tradingDates)
+		}			
+	};
+
+	for (day in tradingDates){
+		if (dataTypes.size()==1){
+			if (dataTypes.lower()=="tick"){
+				dataTypes = dataTypes+"2";
+			};
+			// 遍历交易日下对应market下的dataTypes数据
+			if (market.upper() in ("SH","SZ")){
+				
+				csvPaths = getCsvFilePath(filePath,temporalFormat(day,"yyyyMMdd"),market,dataTypes);
+
+			};
+			else if(market.upper() == "ALL"){
+				csvPaths = getCsvFilePath(filePath,temporalFormat(day,"yyyyMMdd"),"SH",dataTypes);
+				csvPaths.appendTuple!(getCsvFilePath(filePath,temporalFormat(day,"yyyyMMdd"),"SZ",dataTypes));
+			};
+	
+			for (csvPath in csvPaths){
+				if (count(csvPath)==0){
+					msg = stringFormat("%W 日期下没有找到对应的csv文件",temporalFormat(day,"yyyyMMdd"));
+					print(msg);
+					writeLog(msg);
+					continue;
+				}
+				loadFunc(csvPath,dbName,tbName,true);
+			};
+
+		};	
+	};	
+}
+
+// clearCachedModules();
+// go;
+// 测试tick数据
+// ExchTDFData("dfs://TDFData","stockTick","/store/tdf/data/",2025.03.28,2025.03.30,"Tick","ALL",true,false,false);
+
+// 测试order数据
+// ExchTDFData("dfs://TDFData","stockOrder","/store/tdf/data/",2025.03.28,2025.03.30,"Order","ALL",true,false,false);
+
+// 测试orderQueue数据
+// ExchTDFData("dfs://TDFData","stockOrderQueue","/store/tdf/data/",2025.03.28,2025.03.30,"OrderQueue","ALL",true,false,false);
+
+// 测试transaction数据
+// ExchTDFData("dfs://TDFData","stockTransaction","/store/tdf/data/",2025.03.28,2025.03.30,"Transaction","ALL",true,false,false);
+
+
+
+

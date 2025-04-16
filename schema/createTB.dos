@@ -1,0 +1,127 @@
+module DolphinDBScript::ExchTDFData::schema::createTB
+use DolphinDBScript::ExchTDFData::schema::orderSchema
+use DolphinDBScript::ExchTDFData::schema::orderQueueSchema
+use DolphinDBScript::ExchTDFData::schema::tickSchema
+use DolphinDBScript::ExchTDFData::schema::transactionSchema
+
+def createDB(dbName,initialDB){
+	if(existsDatabase(dbName)){
+		if(initialDB==true)	dropDatabase(dbName);
+		else{
+			errorMessage = dict(`message`code, ["Database [" + dbName + "] already exists", "warning"]);
+			writeLog(toStdJson(errorMessage));
+			print(toStdJson(errorMessage));
+			return false
+		};
+	};
+	db1 = database(, VALUE, 2020.01.01..2040.12.31);
+	db2 = database(, HASH, [SYMBOL, 25]);
+	db = database(dbName, COMPO, [db1, db2], , "TSDB");
+	return true;
+};
+
+def createTick(dbName, tbName){
+	db = database(dbName);
+	if(existsTable(dbName, tbName)){
+		errorMessage = dict(`message`code, ["Database [" + dbName + "] already exists table [" + tbName + "]", "warning"]);
+		writeLog(toStdJson(errorMessage));
+		print(toStdJson(errorMessage));
+		return false;
+	};
+	schemaTable = TickSchema();
+	try{
+		db.createPartitionedTable(table=schemaTable, tableName=tbName, partitionColumns=`date`wind_code, compressMethods={TradeTime:"delta"}, sortColumns=`wind_code`date`time, keepDuplicates=ALL);
+	}
+	catch(ex){
+		errorMessage = dict(`message`code, ["DFSTable [" + dbName + ", " + tbName + "] create Failed!", "error"]);
+        writeLog(toStdJson(errorMessage));
+        print(toStdJson(errorMessage));
+	};
+};
+
+def createOrder(dbName, tbName){
+	db = database(dbName);
+	if(existsTable(dbName, tbName)){
+		errorMessage = dict(`message`code, ["Database [" + dbName + "] already exists table [" + tbName + "]", "warning"]);
+		writeLog(toStdJson(errorMessage));
+		print(toStdJson(errorMessage));
+		return false
+	};	
+	schemaTable = OrderSchema();
+	try{	
+		db.createPartitionedTable(table=schemaTable, tableName=tbName, partitionColumns=`date`wind_code, compressMethods={OrderTime:"delta"}, sortColumns=`wind_code`date`time, keepDuplicates=ALL);
+	}
+	catch(ex){
+		errorMessage = dict(`message`code, ["DFSTable [" + dbName + ", " + tbName + "] create Failed！", "error"]);
+        writeLog(toStdJson(errorMessage));
+        print(toStdJson(errorMessage));
+	};
+};
+
+def createOrderQueue(dbName, tbName){
+	db = database(dbName);
+	if(existsTable(dbName, tbName)){
+		errorMessage = dict(`message`code, ["Database [" + dbName + "] already exists table [" + tbName + "]", "warning"]);
+		writeLog(toStdJson(errorMessage));
+		print(toStdJson(errorMessage));
+		return false;
+	};	
+	schemaTable = OrderQueueSchema();
+	try{	
+		db.createPartitionedTable(table=schemaTable, tableName=tbName, partitionColumns=`date`wind_code, compressMethods={OrigTime:"delta"}, sortColumns=`wind_code`date`time, keepDuplicates=ALL)}
+	catch(ex){
+		errorMessage = dict(`message`code, ["DFSTable [" + dbName + ", " + tbName + "] create Failed！", "error"])
+		writeLog(toStdJson(errorMessage))
+		print(toStdJson(errorMessage))
+	};
+};
+
+def createTransaction(dbName, tbName){
+	db = database(dbName);
+	if(existsTable(dbName, tbName)){
+		errorMessage = dict(`message`code, ["Database [" + dbName + "] already exists table [" + tbName + "]", "warning"]);
+		writeLog(toStdJson(errorMessage));
+		print(toStdJson(errorMessage));
+		return false;
+	};	
+	schemaTable = TransactionSchema();
+	try{	
+		db.createPartitionedTable(table=schemaTable, tableName=tbName, partitionColumns=`date`wind_code, compressMethods={OrigTime:"delta"}, sortColumns=`wind_code`date`time, keepDuplicates=ALL)}
+	catch(ex){
+		errorMessage = dict(`message`code, ["DFSTable [" + dbName + ", " + tbName + "] create Failed！", "error"]);
+		writeLog(toStdJson(errorMessage));
+		print(toStdJson(errorMessage));
+	};
+};
+
+
+def createTB(dbName,tbName,dataType,initialDB=false,initialTB=false){
+	createDB(dbName,initialDB);
+	if(initialTB==true){
+		writeLog("Start drop the table [" + tbName + "] in the database [" + dbName + "].");
+		print("Start drop the table [" + tbName + "] in the database [" + dbName + "].");
+		try{dropTable(database(dbName), tbName)}catch(ex){print(ex)};		
+	}
+	if (!existsTable(dbName, tbName)){
+		writeLog("Start create the table [" + tbName + "] in the database [" + dbName + "].");
+		print("Start create the table [" + tbName + "] in the database [" + dbName + "].");
+		
+		if (dataType.lower() == "tick"){
+			createTick(dbName, tbName);
+		}
+		else if (dataType.lower()  == "order"){
+			createOrder(dbName,tbName);
+		}
+		else if (dataType.lower()  == "orderqueue"){
+			createOrderQueue(dbName,tbName);
+		}
+        else if (dataType.lower()  == "transaction"){
+			createTransaction(dbName,tbName);
+		}
+	}
+}
+
+// dbName = "dfs://TDFData";
+// tbName = "tick";
+// dataType = "tick";
+// createTB(dbName,tbName,dataType,initialDB=false,initialTB=false);
