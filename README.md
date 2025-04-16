@@ -66,7 +66,7 @@ DolphinDB处理Wind盘后数据脚本(TDFToCSV)生成的数据。并将其同步
 | order | 逐笔委托表名 | stockOrder |
 | orderqueue | 逐笔委托队列表名 | stockOrderQueue |
 | transaction | 逐笔成交表名 | stockTransaction |
-| filePath | 源数据文件路径 | /data1/hugo/tdf20250304/data/ |
+| filePath | 源数据文件路径 | /store/tdf/data/ |
 
 ## 使用方法
 
