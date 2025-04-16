@@ -2,19 +2,20 @@
  * @Author: hugo2046 shen.lan123@gmail.com
  * @Date: 2025-04-09 14:19:59
  * @LastEditors: hugo2046 shen.lan123@gmail.com
- * @LastEditTime: 2025-04-09 14:48:10
+ * @LastEditTime: 2025-04-11 13:51:28
  * @FilePath: /workspace/DolphinDBScript/ExchTDFData/README.md
- * @Description:
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
 # 说明
 
-DolphinDB处理Wind盘后数据脚本(TDFToCSV)生成的数据。并将其同步至数据库。
+使用ddb读取TDFToCSV生成的csv数据并将其同步至数据库。
 
-将模块放到DolphinDB服务的`/server/modules`中。
+TDFToCSV储存的文件在`/data1/hugo/tdf/`中。
 
 # 每日文件结构
 
-文件结构如下
+每日的文件结构如下
+
 ```
 20250317
 ├── SH-2-0
@@ -141,10 +142,10 @@ schema文件夹下的模块根据wind盘后数据脚本获取的csv表整理取�
 | 开盘价                       | open             | LONG         |
 | 前收盘价                     | pre_close        | LONG         |
 | 今结算(期货)                 | settle           | LONG         |
-|                              | position         | LONG         |
+| 持仓量                             | position         | LONG         |
 | 今虚实度(期权)               | curDelta         | LONG         |
 | 昨结算(期货)                 | preSettle        | LONG         |
-|                              | prePosition      | LONG         |
+| 昨持仓                        | prePosition      | LONG         |
 | 申卖价                       | ask1~asize10     | LONG         |
 | 申卖量                       | asize1~asize1    | LONG         |
 | 申买价                       | bid1~bid10       | LONG         |
@@ -156,10 +157,10 @@ schema文件夹下的模块根据wind盘后数据脚本获取的csv表整理取�
 | 加权平均委卖价格             | total_ask_volume | LONG         |
 | 委托买入总量                 | total_bid_volume | LONG         |
 | 成交编号                     | index            | LONG         |
-|                              | stocks           | LONG         |
-|                              | ups              | LONG         |
-|                              | downs            | LONG         |
-|                              | holdLines        | LONG         |
+| 品种总数                      | stocks           | LONG         |
+| 上涨品种数                    | ups              | LONG         |
+| 下跌品种数                     | downs            | LONG         |
+| 持平品种数                     | holdLines        | LONG         |
 | 均价                         | avgPrice         | LONG         |
 | 盘后价格(科创板有使用到)     | afterPrice       | LONG         |
 | 盘后量(科创板有使用到)       | afterVolume      | LONG         |
@@ -190,7 +191,7 @@ schema文件夹下的模块根据wind盘后数据脚本获取的csv表整理取�
 | 叫卖方委托序号               | ask_order     | LONG         |
 | 叫买方委托序号               | bid_order     | LONG         |
 | channel id                   | channel       | LONG         |
-|                              | index         | LONG         |
+| 不加权指数                  | index         | LONG         |
 | 业务编号                     | biz_index     | LONG         |
 
 ### Order
@@ -222,7 +223,7 @@ schema文件夹下的模块根据wind盘后数据脚本获取的csv表整理取�
 | 委托价格                     | price       | LONG         |
 | 订单数量                     | order_items | LONG         |
 | 明细个数                     | ab_items    | LONG         |
-|                              | ab1~ab50    | LONG         |
+| 叫卖叫卖的前五十笔               | ab1~ab50    | LONG         |
 
 ## 数据导入
 
