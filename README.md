@@ -2,15 +2,13 @@
  * @Author: hugo2046 shen.lan123@gmail.com
  * @Date: 2025-04-09 14:19:59
  * @LastEditors: hugo2046 shen.lan123@gmail.com
- * @LastEditTime: 2025-04-11 13:51:28
+ * @LastEditTime: 2025-04-16 09:18:25
  * @FilePath: /workspace/DolphinDBScript/ExchTDFData/README.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
 # 说明
 
-使用ddb读取TDFToCSV生成的csv数据并将其同步至数据库。
-
-TDFToCSV储存的文件在`/data1/hugo/tdf/`中。
+使用DolphinDB处理Wind每日盘后数据脚本(TDFToCSV)生成的CSV数据。并将其同步至数据库。
 
 # 每日文件结构
 
